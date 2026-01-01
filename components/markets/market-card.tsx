@@ -26,9 +26,22 @@ export function MarketCard({ market, leagueId }: MarketCardProps) {
       <Card className="flex h-full flex-col transition-all hover:border-primary/50 hover:shadow-lg hover:scale-[1.02] cursor-pointer">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
-            <Badge variant="secondary" className="shrink-0 capitalize">
-              {market.category}
-            </Badge>
+            <div className="flex flex-col gap-1">
+              <Badge variant="secondary" className="w-fit shrink-0 capitalize">
+                {market.category}
+              </Badge>
+              <div 
+                className="flex cursor-pointer items-center gap-1 rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  navigator.clipboard.writeText(market.id || market.conditionId)
+                }}
+                title="Click to copy Market ID"
+              >
+                ID: {(market.id || market.conditionId).slice(0, 6)}...
+              </div>
+            </div>
             {endDate && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Clock className="h-3 w-3" />

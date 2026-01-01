@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
-import { fetchMarkets, searchMarkets } from "@/lib/polymarket"
+import { fetchMarkets, fetchMarket, searchMarkets, PolymarketMarket } from "@/lib/polymarket"
 import { MarketCard } from "@/components/markets/market-card"
+import { MarketSearch } from "@/components/markets/market-search"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -22,7 +23,7 @@ const categories = [
 export default async function MarketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ league?: string; q?: string; category?: string; page?: string }>
+  searchParams: Promise<{ league?: string; q?: string; id?: string; category?: string; page?: string }>
 }) {
   const params = await searchParams
   const supabase = await createClient()
@@ -71,8 +72,8 @@ export default async function MarketsPage({
   }
 
   // Fetch markets from Polymarket
-  let allMarkets = []
-  let markets = []
+  let allMarkets: PolymarketMarket[] = []
+  let markets: PolymarketMarket[] = []
   let totalFetched = 0
   
   if (params.q) {
@@ -87,19 +88,15 @@ export default async function MarketsPage({
     totalFetched = allMarkets.length
     markets = allMarkets.slice(offset, offset + MARKETS_PER_PAGE)
   } else if (params.category && params.category !== "all") {
-    // Fetch a large batch and filter client-side for reliable category filtering
-    allMarkets = await fetchMarkets(200, 0)
-    
-    // Filter by category
-    const filteredMarkets = allMarkets.filter(m => matchesCategory(m, params.category!))
-    
-    totalFetched = filteredMarkets.length
-    markets = filteredMarkets.slice(offset, offset + MARKETS_PER_PAGE)
+    // Fetch markets filtered by category from backend
+    markets = await fetchMarkets(MARKETS_PER_PAGE, offset, params.category)
+    const nextMarkets = await fetchMarkets(1, offset + MARKETS_PER_PAGE, params.category)
+    totalFetched = markets.length + nextMarkets.length
   } else {
     // Fetch all markets with pagination
-    allMarkets = await fetchMarkets(MARKETS_PER_PAGE + 1, offset)
-    totalFetched = allMarkets.length
-    markets = allMarkets.slice(0, MARKETS_PER_PAGE)
+    markets = await fetchMarkets(MARKETS_PER_PAGE, offset)
+    const nextMarkets = await fetchMarkets(1, offset + MARKETS_PER_PAGE)
+    totalFetched = markets.length + nextMarkets.length
   }
 
   // Filter by league's allowed categories if league is specified
@@ -142,13 +139,8 @@ export default async function MarketsPage({
       </div>
 
       {/* Search and Filters */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <form className="relative flex-1" action="/dashboard/markets" method="GET">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input name="q" placeholder="Search markets..." defaultValue={params.q} className="pl-10" />
-          {params.league && <input type="hidden" name="league" value={params.league} />}
-          {params.category && <input type="hidden" name="category" value={params.category} />}
-        </form>
+      <div className="flex flex-col gap-4">
+        <MarketSearch />
 
         <div className="flex flex-wrap gap-2">
           {categories.map((cat) => (

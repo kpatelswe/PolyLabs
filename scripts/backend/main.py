@@ -15,11 +15,18 @@ import httpx
 import os
 from datetime import datetime
 from supabase import create_client, Client
+from dotenv import load_dotenv
+
+# Load environment variables from .env.local in project root
+# Script is in scripts/backend/, so root is ../../
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+load_dotenv(os.path.join(root_dir, ".env.local"))
+load_dotenv(os.path.join(root_dir, ".env")) # Fallback
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Polyleagues API",
-    description="Backend API for Polyleagues prediction market platform",
+    title="PolyLabs API",
+    description="Backend API for PolyLabs prediction market platform",
     version="1.0.0"
 )
 
@@ -69,21 +76,142 @@ class Achievement(BaseModel):
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
+# Category definitions
+CATEGORIES = {
+    "politics": {
+        "matches": ["us-current-affairs", "current-affairs", "politics"],
+        "terms": ["election", "president", "congress", "vote", "trump", "biden", "senate", "governor", "democrat", "republican"]
+    },
+    "sports": {
+        "matches": ["sports"],
+        "terms": ["nfl", "nba", "football", "basketball", "soccer", "championship", "super bowl", "world cup", "playoffs", "mvp"]
+    },
+    "crypto": {
+        "matches": ["crypto"],
+        "terms": ["bitcoin", "ethereum", "btc", "eth", "blockchain", "token", "solana", "crypto", "coin", "defi"]
+    },
+    "pop-culture": {
+        "matches": ["pop-culture"],
+        "terms": ["movie", "oscar", "grammy", "celebrity", "music", "entertainment", "award", "album", "actor", "singer"]
+    },
+    "tech": {
+        "matches": ["tech"],
+        "terms": ["apple", "google", "microsoft", "ai", "openai", "chatgpt", "twitter", "meta", "tesla", "elon"]
+    }
+}
+
+def matches_category(market: dict, category_value: str) -> bool:
+    import re
+    
+    if category_value == "all" or not category_value:
+        return True
+    
+    config = CATEGORIES.get(category_value)
+    if not config:
+        return False
+        
+    question = (market.get("question") or "").lower()
+    market_category = (market.get("category") or "").lower()
+    
+    # Check category match (if data has tags/category)
+    for match in config["matches"]:
+        if match in market_category or market_category.replace("-", " ") == match.replace("-", " "):
+            return True
+            
+    # Check terms using word boundary matching to avoid false positives like "inflation" matching "nfl"
+    for term in config["terms"]:
+        # Use regex word boundary for accurate matching
+        pattern = r'\b' + re.escape(term) + r'\b'
+        if re.search(pattern, question):
+            return True
+            
+    return False
+
 # Market endpoints
 @app.get("/api/markets")
-async def get_markets(limit: int = 50, offset: int = 0, category: Optional[str] = None):
-    """Fetch markets from Polymarket API"""
-    async with httpx.AsyncClient() as client:
-        url = f"{GAMMA_API}/markets?limit={limit}&offset={offset}&active=true&closed=false"
-        if category:
-            url += f"&tag={category}"
+async def get_markets(limit: int = 50, offset: int = 0, category: Optional[str] = None, q: Optional[str] = None):
+    """Fetch markets from Polymarket API with backend filtering"""
+    import re
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        markets = []
         
-        response = await client.get(url)
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Failed to fetch markets")
+        if q:
+            # Search mode: The Gamma API _q search is unreliable with active filters
+            # So we fetch a large batch of active markets and filter by query ourselves
+            
+            # First, check if q looks like an ID (numeric or hex)
+            is_id_search = q.isdigit() or (len(q) > 10 and all(c in '0123456789abcdefABCDEF' for c in q.replace('0x', '')))
+            
+            # Check if q is a URL or Slug
+            slug_search = None
+            if "polymarket.com/event/" in q:
+                try:
+                    slug_search = q.split("polymarket.com/event/")[1].split("?")[0].split("/")[0]
+                except:
+                    pass
+            elif "-" in q and not " " in q and not is_id_search:
+                # heuristic for slug: has dashes, no spaces, not an ID
+                slug_search = q
+                
+            if slug_search:
+                try:
+                    response = await client.get(f"{GAMMA_API}/events?slug={slug_search}")
+                    if response.status_code == 200:
+                        events = response.json()
+                        if events:
+                            # Events endpoint returns a list of events (usually 1 matching slug)
+                            # Each event has a 'markets' array
+                            for event in events:
+                                event_markets = event.get("markets", [])
+                                markets.extend(event_markets)
+                except Exception as e:
+                    print(f"Error fetching by slug: {e}")
+                    pass
+
+            if not markets and is_id_search:
+                # Try to fetch by ID directly
+                try:
+                    response = await client.get(f"{GAMMA_API}/markets/{q}")
+                    if response.status_code == 200:
+                        market = response.json()
+                        if market:
+                            # If explicit ID search, allow returning even if closed/inactive
+                            markets = [market]
+                except:
+                    pass
+            
+            # If ID search didn't work or wasn't an ID, search by text
+            if not markets:
+                # Fetch a large batch of active markets
+                url = f"{GAMMA_API}/markets?limit=1000&active=true&closed=false"
+                response = await client.get(url)
+                if response.status_code == 200:
+                    all_markets = response.json()
+                    query_lower = q.lower()
+                    # Filter by question containing the search query
+                    for m in all_markets:
+                        question = (m.get("question") or "").lower()
+                        description = (m.get("description") or "").lower()
+                        if query_lower in question or query_lower in description:
+                            markets.append(m)
+        else:
+            # Browse mode: fetch large batch of active markets
+            fetch_limit = 1000 if category else max(500, limit + offset + 100)
+            url = f"{GAMMA_API}/markets?limit={fetch_limit}&active=true&closed=false"
+            response = await client.get(url)
+            if response.status_code == 200:
+                markets = response.json()
+
+        # Apply Category Filter
+        if category and category != "all":
+            markets = [m for m in markets if matches_category(m, category)]
+
+        # Apply Pagination
+        total_count = len(markets)
+        paginated_markets = markets[offset : offset + limit]
         
-        markets = response.json()
-        return {"markets": markets, "count": len(markets)}
+        return {"markets": paginated_markets, "count": total_count}
 
 @app.get("/api/markets/{market_id}")
 async def get_market(market_id: str):
@@ -447,6 +575,128 @@ async def process_trade(trade: TradeRequest, supabase: Client = Depends(get_supa
         "pnl": pnl
     }
 
+# Market Settlement
+@app.post("/api/positions/settle")
+async def settle_positions(background_tasks: BackgroundTasks, supabase: Client = Depends(get_supabase)):
+    """Check for resolved markets and settle positions"""
+    background_tasks.add_task(settle_resolved_markets, supabase)
+    return {"status": "started", "message": "Settlement process started"}
+
+async def settle_resolved_markets(supabase: Client):
+    """Background task to settle positions for resolved markets"""
+    # Fetch all active positions
+    result = supabase.table("positions").select("*").execute()
+    positions = result.data
+    
+    if not positions:
+        return
+    
+    # Group by market_id
+    market_ids = set(p["market_id"] for p in positions)
+    
+    async with httpx.AsyncClient() as client:
+        for market_id in market_ids:
+            try:
+                response = await client.get(f"{GAMMA_API}/markets/{market_id}")
+                if response.status_code != 200:
+                    continue
+                
+                market_data = response.json()
+                
+                # Check if market is resolved
+                # Criteria: closed is True and one token is winner
+                if not market_data.get("closed"):
+                    continue
+                    
+                tokens = market_data.get("tokens", [])
+                winning_outcome = None
+                
+                # Find winning outcome from tokens
+                for token in tokens:
+                    if token.get("winner"):
+                        # outcome is usually "Yes" or "No" for binary markets
+                        winning_outcome = token.get("outcome")
+                        break
+                
+                # If no winner found in tokens (maybe early close or different format), skip
+                if not winning_outcome:
+                    continue
+                    
+                winning_outcome_lower = winning_outcome.lower()
+                
+                # Process positions for this market
+                for position in positions:
+                    if position["market_id"] == market_id:
+                        user_id = position["league_member_id"]
+                        held_outcome = position["outcome"] # "yes" or "no"
+                        shares = position["shares"]
+                        
+                        # Determine payout (1.0 for winner, 0.0 for loser)
+                        # We assume binary Yes/No markets for now from the text comparison
+                        payout_per_share = 1.0 if held_outcome.lower() == winning_outcome_lower else 0.0
+                        total_payout = shares * payout_per_share
+                        
+                        # Calculate Final PnL
+                        entry_val = position["entry_price"] * shares
+                        final_pnl = total_payout - entry_val
+                        
+                        # Fetch user member data
+                        member_res = supabase.table("league_members").select("*").eq("id", user_id).single().execute()
+                        if not member_res.data:
+                            continue
+                        member = member_res.data
+                        
+                        # Update Member Balance & Stats
+                        new_balance = member["current_balance"] + total_payout
+                        new_total_pnl = member["total_pnl"] + final_pnl
+                        
+                        # Record settlement trade
+                        supabase.table("trades").insert({
+                            "league_member_id": user_id,
+                            "market_id": market_id,
+                            "market_slug": position["market_slug"],
+                            "market_question": position["market_question"],
+                            "trade_type": "settle",
+                            "outcome": held_outcome,
+                            "shares": shares,
+                            "price": payout_per_share,
+                            "total_value": total_payout,
+                            "pnl": final_pnl
+                        }).execute()
+                        
+                        # Update win rate and trade counts
+                        # Fetch all completed trades (sell or settle) to recalc win rate
+                        trades_res = supabase.table("trades") \
+                            .select("pnl") \
+                            .eq("league_member_id", user_id) \
+                            .or_("trade_type.eq.sell,trade_type.eq.settle") \
+                            .execute()
+                            
+                        completed_trades = trades_res.data
+                        if completed_trades:
+                            wins = len([t for t in completed_trades if (t.get("pnl") or 0) > 0])
+                            new_win_rate = (wins / len(completed_trades)) * 100
+                        else:
+                            new_win_rate = member["win_rate"]
+                        
+                        # Update member
+                        supabase.table("league_members").update({
+                            "current_balance": new_balance,
+                            "total_pnl": new_total_pnl,
+                            "win_rate": new_win_rate,
+                            # Increment total trades? Yes, settlement is a trade closure.
+                            "total_trades": member["total_trades"] + 1 
+                        }).eq("id", user_id).execute()
+                        
+                        # Remove Closed Position
+                        supabase.table("positions").delete().eq("id", position["id"]).execute()
+                        
+                        print(f"Settled: User {user_id} on {market_id}. Held {held_outcome}, Winner {winning_outcome}. PnL: {final_pnl}")
+
+            except Exception as e:
+                print(f"Error settling market {market_id}: {e}")
+                continue
+
 # Scheduled tasks info
 @app.get("/api/tasks/status")
 async def get_task_status():
@@ -455,7 +705,8 @@ async def get_task_status():
         "tasks": [
             {"name": "update_prices", "endpoint": "POST /api/positions/update-prices", "description": "Update all position prices"},
             {"name": "update_rankings", "endpoint": "POST /api/leagues/update-all-rankings", "description": "Update all league rankings"},
-            {"name": "check_achievements", "endpoint": "POST /api/achievements/check/{user_id}", "description": "Check and award achievements"}
+            {"name": "check_achievements", "endpoint": "POST /api/achievements/check/{user_id}", "description": "Check and award achievements"},
+            {"name": "settle_positions", "endpoint": "POST /api/positions/settle", "description": "Settle positions for resolved markets"}
         ],
         "note": "These endpoints can be called by a scheduler (e.g., cron job) for periodic updates"
     }

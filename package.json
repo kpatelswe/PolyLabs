@@ -5,6 +5,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
+    "backend": "cd scripts/backend && python3 -m pip install -r requirements.txt && python3 main.py",
     "lint": "eslint .",
     "start": "next start"
   },

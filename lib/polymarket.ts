@@ -1,4 +1,6 @@
 // Polymarket API client for fetching real market data
+// Now redirected to our local FastAPI backend
+const BACKEND_API = "http://127.0.0.1:8000"
 const POLYMARKET_API = "https://clob.polymarket.com"
 const GAMMA_API = "https://gamma-api.polymarket.com"
 
@@ -29,11 +31,17 @@ export interface PolymarketEvent {
   markets: PolymarketMarket[]
 }
 
-// Fetch active markets from Polymarket
-export async function fetchMarkets(limit = 50, offset = 0): Promise<PolymarketMarket[]> {
+// Fetch active markets from Polymarket via FastAPI
+export async function fetchMarkets(limit = 50, offset = 0, category?: string): Promise<PolymarketMarket[]> {
   try {
-    const response = await fetch(`${GAMMA_API}/markets?limit=${limit}&offset=${offset}&active=true&closed=false`, {
-      next: { revalidate: 10 }, // Cache for 10 seconds
+    let url = `${BACKEND_API}/api/markets?limit=${limit}&offset=${offset}`
+    if (category && category !== 'all') {
+      url += `&category=${category}`
+    }
+    
+    const response = await fetch(url, {
+      next: { revalidate: 10 },
+      cache: 'no-store' // Ensure we get fresh data
     })
 
     if (!response.ok) {
@@ -41,18 +49,20 @@ export async function fetchMarkets(limit = 50, offset = 0): Promise<PolymarketMa
     }
 
     const data = await response.json()
-    return data.map(formatMarket)
+    // Python API returns { markets: [...], count: ... }
+    return data.markets.map(formatMarket)
   } catch (error) {
-    console.error("Error fetching markets:", error)
+    console.error("Error fetching markets from backend:", error)
     return []
   }
 }
 
-// Fetch a single market by ID
+// Fetch a single market by ID via FastAPI
 export async function fetchMarket(conditionId: string): Promise<PolymarketMarket | null> {
   try {
-    const response = await fetch(`${GAMMA_API}/markets/${conditionId}`, {
-      next: { revalidate: 30 },
+    const response = await fetch(`${BACKEND_API}/api/markets/${conditionId}`, {
+      next: { revalidate: 10 },
+      cache: 'no-store'
     })
 
     if (!response.ok) {
@@ -62,16 +72,17 @@ export async function fetchMarket(conditionId: string): Promise<PolymarketMarket
     const data = await response.json()
     return formatMarket(data)
   } catch (error) {
-    console.error("Error fetching market:", error)
+    console.error("Error fetching market from backend:", error)
     return null
   }
 }
 
-// Search markets by query
+// Search markets by query via FastAPI
 export async function searchMarkets(query: string): Promise<PolymarketMarket[]> {
   try {
-    const response = await fetch(`${GAMMA_API}/markets?_q=${encodeURIComponent(query)}&active=true&closed=false`, {
-      next: { revalidate: 60 },
+    const response = await fetch(`${BACKEND_API}/api/markets?q=${encodeURIComponent(query)}`, {
+      next: { revalidate: 10 },
+      cache: 'no-store'
     })
 
     if (!response.ok) {
@@ -79,9 +90,9 @@ export async function searchMarkets(query: string): Promise<PolymarketMarket[]> 
     }
 
     const data = await response.json()
-    return data.map(formatMarket)
+    return data.markets.map(formatMarket)
   } catch (error) {
-    console.error("Error searching markets:", error)
+    console.error("Error searching markets from backend:", error)
     return []
   }
 }
