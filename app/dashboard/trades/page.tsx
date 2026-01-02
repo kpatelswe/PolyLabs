@@ -1,34 +1,39 @@
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { History, ArrowUp, ArrowDown } from "@/components/icons"
 
 export default async function TradesPage() {
   const supabase = await createClient()
+  const adminClient = createAdminClient()
+  
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Fetch all user's league memberships
-  const { data: memberships } = await supabase
+  // Fetch all user's league memberships (using admin client)
+  const { data: memberships } = await adminClient
     .from("league_members")
     .select("id, league:leagues(id, name)")
     .eq("user_id", user?.id)
 
   const memberIds = memberships?.map((m) => m.id) ?? []
 
-  // Fetch trades across all leagues
-  const { data: trades } = await supabase
-    .from("trades")
-    .select(`
-      *,
-      league_member:league_members(
-        league:leagues(name)
-      )
-    `)
-    .in("league_member_id", memberIds)
-    .order("created_at", { ascending: false })
-    .limit(100)
+  // Fetch trades across all leagues (using admin client)
+  const { data: trades } = memberIds.length > 0 
+    ? await adminClient
+        .from("trades")
+        .select(`
+          *,
+          league_member:league_members(
+            league:leagues(name)
+          )
+        `)
+        .in("league_member_id", memberIds)
+        .order("created_at", { ascending: false })
+        .limit(100)
+    : { data: [] }
 
   return (
     <div className="space-y-6">

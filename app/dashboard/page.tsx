@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { StatsCard } from "@/components/dashboard/stats-card"
 import { LeagueCard } from "@/components/dashboard/league-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,6 +9,8 @@ import Link from "next/link"
 
 export default async function DashboardPage() {
   const supabase = await createClient()
+  const adminClient = createAdminClient()
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -15,8 +18,8 @@ export default async function DashboardPage() {
   // Fetch user profile
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", user?.id).single()
 
-  // Fetch user's league memberships with league details
-  const { data: memberships } = await supabase
+  // Fetch user's league memberships with league details (using admin client to bypass RLS)
+  const { data: memberships } = await adminClient
     .from("league_members")
     .select(`
       *,

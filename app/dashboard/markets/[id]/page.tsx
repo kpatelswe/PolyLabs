@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { fetchMarket, getMarketPrices } from "@/lib/polymarket"
 import { TradePanel } from "@/components/markets/trade-panel"
 import { PriceChart } from "@/components/markets/price-chart"
@@ -21,6 +22,8 @@ export default async function MarketDetailPage({
   const { league: selectedLeagueId } = await searchParams
 
   const supabase = await createClient()
+  const adminClient = createAdminClient()
+  
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -33,10 +36,13 @@ export default async function MarketDetailPage({
   let memberships: Array<{
     id: string
     league: { id: string; name: string; max_position_size: number; allowed_categories: string[] } | null
+    current_balance: number
+    total_trades: number
   }> | null = null
   
   if (user) {
-    const { data: membershipsData } = await supabase
+    // Use admin client to fetch memberships to bypass RLS issues
+    const { data: membershipsData } = await adminClient
       .from("league_members")
       .select(`
         *,

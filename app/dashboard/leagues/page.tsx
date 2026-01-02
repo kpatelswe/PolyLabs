@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { LeagueCard } from "@/components/dashboard/league-card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -7,12 +8,14 @@ import Link from "next/link"
 
 export default async function MyLeaguesPage() {
   const supabase = await createClient()
+  const adminClient = createAdminClient()
+  
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Fetch leagues user is a member of
-  const { data: memberships } = await supabase
+  // Fetch leagues user is a member of (using admin client to bypass potential RLS issues)
+  const { data: memberships } = await adminClient
     .from("league_members")
     .select(`
       *,
@@ -22,7 +25,7 @@ export default async function MyLeaguesPage() {
     .order("joined_at", { ascending: false })
 
   // Fetch leagues user is commissioner of
-  const { data: ownedLeagues } = await supabase
+  const { data: ownedLeagues } = await adminClient
     .from("leagues")
     .select("*")
     .eq("commissioner_id", user?.id)

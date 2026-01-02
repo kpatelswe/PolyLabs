@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client"
 import type { PolymarketMarket } from "@/lib/polymarket"
 import { getMarketPrices } from "@/lib/polymarket"
 import type { LeagueMember } from "@/lib/types"
+import { processTradeViaAPI } from "@/lib/api"
 
 interface TradePanelProps {
   market: PolymarketMarket
@@ -45,8 +46,6 @@ export function TradePanel({ market, memberships, selectedLeagueId }: TradePanel
     setIsLoading(true)
     setError(null)
 
-    const supabase = createClient()
-
     try {
       // Validate trade
       if (amountNum > selectedMembership.current_balance) {
@@ -57,23 +56,8 @@ export function TradePanel({ market, memberships, selectedLeagueId }: TradePanel
         throw new Error(`Maximum position size is $${maxTrade.toFixed(2)}`)
       }
 
-      // Create position
-      const { error: positionError } = await supabase.from("positions").insert({
-        league_member_id: selectedMembership.id,
-        market_id: market.conditionId,
-        market_slug: market.slug,
-        market_question: market.question,
-        outcome,
-        shares,
-        entry_price: currentPrice,
-        current_price: currentPrice,
-        unrealized_pnl: 0,
-      })
-
-      if (positionError) throw positionError
-
-      // Record trade
-      const { error: tradeError } = await supabase.from("trades").insert({
+      // Process trade via Backend API
+      await processTradeViaAPI({
         league_member_id: selectedMembership.id,
         market_id: market.conditionId,
         market_slug: market.slug,
@@ -82,21 +66,7 @@ export function TradePanel({ market, memberships, selectedLeagueId }: TradePanel
         outcome,
         shares,
         price: currentPrice,
-        total_value: amountNum,
       })
-
-      if (tradeError) throw tradeError
-
-      // Update balance
-      const { error: updateError } = await supabase
-        .from("league_members")
-        .update({
-          current_balance: selectedMembership.current_balance - amountNum,
-          total_trades: selectedMembership.total_trades + 1,
-        })
-        .eq("id", selectedMembership.id)
-
-      if (updateError) throw updateError
 
       router.push(`/dashboard/leagues/${leagueId}`)
       router.refresh()
