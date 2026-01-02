@@ -71,10 +71,79 @@ class Achievement(BaseModel):
     title: str
     description: Optional[str]
 
+class CreateLeagueRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    commissioner_id: str
+    is_public: bool = True
+    starting_capital: float = 10000
+    max_position_size: float = 25
+    scoring_type: str = "standard"
+
 # Health check
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+# League creation
+@app.post("/api/leagues")
+async def create_league(request: CreateLeagueRequest, supabase: Client = Depends(get_supabase)):
+    """Create a new league and add the commissioner as the first member"""
+    import secrets
+    
+    try:
+        # Generate invite code for private leagues
+        invite_code = None
+        if not request.is_public:
+            invite_code = secrets.token_hex(4).upper()
+        
+        # Create the league
+        league_data = {
+            "name": request.name,
+            "description": request.description,
+            "commissioner_id": request.commissioner_id,
+            "is_public": request.is_public,
+            "invite_code": invite_code,
+            "starting_capital": request.starting_capital,
+            "max_position_size": request.max_position_size,
+            "scoring_type": request.scoring_type,
+            "status": "active"
+        }
+        
+        result = supabase.table("leagues").insert(league_data).execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create league")
+        
+        league = result.data[0]
+        
+        # Add commissioner as first member
+        member_data = {
+            "league_id": league["id"],
+            "user_id": request.commissioner_id,
+            "current_balance": request.starting_capital,
+            "total_pnl": 0,
+            "total_trades": 0,
+            "win_rate": 0,
+            "rank": 1
+        }
+        
+        member_result = supabase.table("league_members").insert(member_data).execute()
+        
+        if not member_result.data:
+            # Rollback league creation if member insert fails
+            supabase.table("leagues").delete().eq("id", league["id"]).execute()
+            raise HTTPException(status_code=500, detail="Failed to add commissioner as member")
+        
+        return {
+            "status": "success",
+            "league": league,
+            "member": member_result.data[0]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Category definitions
 CATEGORIES = {

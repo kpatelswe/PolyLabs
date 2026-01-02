@@ -85,3 +85,27 @@ export async function processTradeViaAPI(trade: TradeRequest) {
   }
   return response.json()
 }
+
+// League creation
+export interface CreateLeagueRequest {
+  name: string
+  description?: string
+  commissioner_id: string
+  is_public: boolean
+  starting_capital: number
+  max_position_size: number
+  scoring_type: string
+}
+
+export async function createLeagueViaAPI(league: CreateLeagueRequest) {
+  const response = await fetch(`${API_URL}/api/leagues`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(league),
+  })
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.detail || "Failed to create league")
+  }
+  return response.json()
+}

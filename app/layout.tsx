@@ -11,14 +11,10 @@ export const metadata: Metadata = {
   title: "PolyLabs - Competitive Prediction Market Leagues",
   description:
     "Create and join fantasy-style leagues to compete on real Polymarket prediction markets. Strategy, skill, and insight - not gambling.",
-  generator: "v0.app",
+
   icons: {
-    icon: [
-      { url: "/icon-light-32x32.png", media: "(prefers-color-scheme: light)" },
-      { url: "/icon-dark-32x32.png", media: "(prefers-color-scheme: dark)" },
-      { url: "/icon.svg", type: "image/svg+xml" },
-    ],
-    apple: "/apple-icon.png",
+    icon: "/icon.svg",
+    apple: "/icon.svg",
   },
 }
 

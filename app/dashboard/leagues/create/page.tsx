@@ -13,15 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Trophy } from "@/components/icons"
-
-const categories = [
-  { value: "politics", label: "Politics" },
-  { value: "sports", label: "Sports" },
-  { value: "crypto", label: "Crypto" },
-  { value: "entertainment", label: "Entertainment" },
-  { value: "science", label: "Science" },
-  { value: "economics", label: "Economics" },
-]
+import { createLeagueViaAPI } from "@/lib/api"
 
 export default function CreateLeaguePage() {
   const router = useRouter()
@@ -34,7 +26,6 @@ export default function CreateLeaguePage() {
   const [startingCapital, setStartingCapital] = useState("10000")
   const [maxPositionSize, setMaxPositionSize] = useState("25")
   const [scoringType, setScoringType] = useState("standard")
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(["politics", "sports", "crypto"])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,53 +44,23 @@ export default function CreateLeaguePage() {
     }
 
     try {
-      // Generate invite code for private leagues
-      const inviteCode = !isPublic ? Math.random().toString(36).substring(2, 10).toUpperCase() : null
-
-      // Create the league
-      const { data: league, error: leagueError } = await supabase
-        .from("leagues")
-        .insert({
-          name,
-          description: description || null,
-          commissioner_id: user.id,
-          is_public: isPublic,
-          invite_code: inviteCode,
-          starting_capital: Number.parseFloat(startingCapital),
-          max_position_size: Number.parseFloat(maxPositionSize),
-          scoring_type: scoringType,
-          allowed_categories: selectedCategories,
-          status: "active",
-        })
-        .select()
-        .single()
-
-      if (leagueError) throw leagueError
-
-      // Add commissioner as first member
-      const { error: memberError } = await supabase.from("league_members").insert({
-        league_id: league.id,
-        user_id: user.id,
-        current_balance: Number.parseFloat(startingCapital),
+      // Use Python backend API for league creation
+      const result = await createLeagueViaAPI({
+        name,
+        description: description || undefined,
+        commissioner_id: user.id,
+        is_public: isPublic,
+        starting_capital: Number.parseFloat(startingCapital),
+        max_position_size: Number.parseFloat(maxPositionSize),
+        scoring_type: scoringType,
       })
 
-      if (memberError) throw memberError
-
-      // Update profile
-      await supabase.rpc("increment_leagues_joined", { user_id: user.id })
-
-      router.push(`/dashboard/leagues/${league.id}`)
+      router.push(`/dashboard/leagues/${result.league.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create league")
     } finally {
       setIsLoading(false)
     }
-  }
-
-  const toggleCategory = (category: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category],
-    )
   }
 
   return (
@@ -148,6 +109,13 @@ export default function CreateLeaguePage() {
                 </div>
                 <Switch checked={isPublic} onCheckedChange={setIsPublic} />
               </div>
+              {!isPublic && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                  <p className="text-sm text-muted-foreground">
+                    <strong className="text-foreground">Private League:</strong> An invite code will be generated after creation. Share it with friends to let them join.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -196,24 +164,6 @@ export default function CreateLeaguePage() {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div className="space-y-2">
-                <Label>Allowed Market Categories</Label>
-                <div className="flex flex-wrap gap-2">
-                  {categories.map((category) => (
-                    <Button
-                      key={category.value}
-                      type="button"
-                      variant={selectedCategories.includes(category.value) ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => toggleCategory(category.value)}
-                      className={!selectedCategories.includes(category.value) ? "bg-transparent" : ""}
-                    >
-                      {category.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
             </CardContent>
           </Card>
 
@@ -239,3 +189,4 @@ export default function CreateLeaguePage() {
     </div>
   )
 }
+
