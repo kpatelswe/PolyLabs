@@ -1,4 +1,4 @@
-# PolyLabs: Fantasy Prediction Markets
+# PolyLabs: Fantasy Leagues, but for Prediction Markets
 
 PolyLabs is a fantasy trading platform that allows users to compete in leagues by trading simulated shares on real-world events from [Polymarket](https://polymarket.com).
 
