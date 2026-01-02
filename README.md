@@ -2,14 +2,7 @@
 
 PolyLabs is a fantasy trading platform that allows users to compete in leagues by trading simulated shares on real-world events from [Polymarket](https://polymarket.com).
 
-![PolyLabs Dashboard](https://github.com/user-attachments/assets/placeholder)
-
-## 🚀 Tech Stack
-
-- **Frontend**: Next.js 14, TypeScript, Tailwind CSS, Shadcn UI
-- **Backend**: Go (Golang) 1.25+
-- **Database**: Supabase (PostgreSQL + Real-time)
-- **Market Data**: Polymarket Gamma API
+The tech used includes TypeScript, Go (Golang), Next.js, Supabase (PostgreSQL + Real-time), Polymarket Gamma API!
 
 ## 🏗 Architecture
 
@@ -67,7 +60,6 @@ npm run dev
 - **Real-Time Trading**: Buy and sell positions on active Polymarket events (Sports, Politics, Crypto, etc.).
 - **Live Leaderboards**: Track performance against friends with real-time PnL updates.
 - **Simulated Matching Engine**: Orders are "filled" against real-world liquidity snapshots.
-- **Achievements**: Earn badges for trading milestones (e.g., "First Trade", "ROI King").
 
 ## 📂 Project Structure
 
